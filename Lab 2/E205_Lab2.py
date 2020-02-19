@@ -12,7 +12,7 @@ import time
 import sys
 import matplotlib.pyplot as plt
 import numpy as np
-
+import pdb
 
 def load_data(filename):
     """Load in the yaw data from the csv log
@@ -59,8 +59,10 @@ def prediction_step(x_t_prev, sigma_sq_t_prev):
     """
 
     """STUDENT CODE START"""
-    x_bar_t = None
-    sigma_sq_bar_t = None
+    # No prediction step needed for Lab 2!
+    # so none was implemented lol
+    x_bar_t = x_t_prev
+    sigma_sq_bar_t = sigma_sq_t_prev
     """STUDENT CODE END"""
 
     return [x_bar_t, sigma_sq_bar_t]
@@ -82,8 +84,9 @@ def correction_step(x_bar_t, z_t, sigma_sq_bar_t, sigma_sq_z):
     """
 
     """STUDENT CODE START"""
-    x_est_t = None
-    sigma_sq_est_t = None
+    K_t = sigma_sq_bar_t / (sigma_sq_bar_t + sigma_sq_z)
+    x_est_t = x_bar_t + K_t*(z_t - x_bar_t)
+    sigma_sq_est_t = sigma_sq_bar_t - K_t * sigma_sq_bar_t
 
     """STUDENT CODE END"""
 
@@ -99,12 +102,14 @@ def plot_yaw(yaw_dict, time_stamps, title=None, xlim=None, ylim=None):
     """Plot yaw data"""
     plt.plot(np.asarray(time_stamps),
              np.array(yaw_dict["measurements"]),
-             '.',
-             markersize=1)
+             '.-',
+             markersize=1,
+             linewidth=0.7)
     plt.plot(np.asarray(time_stamps),
              np.array(yaw_dict["estimates"]),
-             '.',
-             markersize=1)
+             '.--',
+             markersize=1,
+             linewidth=0.5)
     plt.plot(np.asarray(time_stamps),
              np.asarray(yaw_dict["plus_2_stddev"]),
              '.-',
@@ -127,14 +132,25 @@ def main():
     """Run a 1D Kalman Filter on logged yaw data from a BNO055 IMU."""
 
     filepath = "./"
-    filename = "2020-02-08_08;34;45.csv"
+    #filename = "2020-02-08_08_22_47.csv" #stationary data
+    #filename = "2020-02-08_08_34_45.csv" #walking around file #1
+    filename = "2020-02-08_08_52_01.csv" #walking around file #2
+
     yaw_data = load_data(filepath + filename)
 
+    # #Question 1: Stationary Data Histogram & Variance
+    # plt.hist(yaw_data,50)
+    # plt.title("Stationary Data Histogram")
+    # plt.ylabel("Yaw Angle (deg)")
+    # plt.show()
+    # print('Variance: ', np.var(yaw_data))
+
     """STUDENT CODE START"""
-    SENSOR_MODEL_VARIANCE = None
+    SENSOR_MODEL_VARIANCE = 1.9255394622414057 # gotten with np.var(yaw_data) of stationary data
     """STUDENT CODE END"""
 
     #  Initialize filter
+    yaw_dict = {}
     yaw_est_t_prev = yaw_data[0]
     var_t_prev = SENSOR_MODEL_VARIANCE
     yaw_dict["measurements"] = yaw_data
@@ -177,8 +193,8 @@ def main():
         var_est_t_prev = var_est_t
 
         # Pack data away into yaw dictionary for plotting purpose
-        plus_2_stddev = wrap_to_360(yaw_est_t + 2*sqrt(var_est_t))
-        minus_2_stddev = wrap_to_360(yaw_est_t - 2*sqrt(var_est_t))
+        plus_2_stddev = wrap_to_360(yaw_est_t + 2*np.sqrt(var_est_t))
+        minus_2_stddev = wrap_to_360(yaw_est_t - 2*np.sqrt(var_est_t))
 
         yaw_dict["estimates"].append(yaw_est_t)
         yaw_dict["plus_2_stddev"].append(plus_2_stddev)
@@ -188,14 +204,14 @@ def main():
 
     # Plot raw data and estimate
     plt.figure(1)
-    plt.suptitle("1D Kalman Filtering: Yaw Measurements")
+    plt.suptitle("1D Kalman Filtering: Yaw Measurements for 2020-02-08_08_52_01.csv")
     plt.subplot(1, 2, 1)
     plot_yaw(yaw_dict, time_stamps, title="Full Log")
     plt.subplot(1, 2, 2)
     plot_yaw(yaw_dict,
              time_stamps,
              title="Zoomed",
-             xlim=[8, 12],
+             xlim=[13, 23],
              ylim=[280, 360])
     plt.show()
 
