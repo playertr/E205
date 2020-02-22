@@ -84,8 +84,8 @@ S_1 = speed(E205Lab2NuScenesData.X_1, E205Lab2NuScenesData.Y_1, t_1, t_prev_1,de
 % Vehicle 6
 t_6 = [20:41];
 t_prev_6 = [19:40];
-S_6 = speed(E205Lab2NuScenesData.X_1, E205Lab2NuScenesData.Y_1, t_1, t_prev_1,delta_t);
-%% Bayes Filter
+S_6 = speed(E205Lab2NuScenesData.X_6, E205Lab2NuScenesData.Y_6, t_6, t_prev_6,delta_t);
+%% Bayes Filter for car Ego
 % initialization
 bel_x_prev = [0.5; 0.5];
 p_x_xprev = [0.6, 0.25; 0.4, 0.75]; % transition matrix; values given in lab 2 manual
@@ -93,7 +93,7 @@ myspeed = S_ego; % speed vector for vehicle selected for filter
 estimate = [];
 
 for t = 1:length(myspeed)
-estimate = [estimate, bel_x];
+
 
 % prediction step
 bel_bar_x = p_x_xprev * bel_x_prev; % 2x1 mat = 2x2 mat + 2x1 mat
@@ -104,6 +104,7 @@ bel_x = bel_x ./ sum(bel_x); % eta = 1/sum(bel_x)
 
 % step foward
 bel_x_prev = bel_x;
+estimate = [estimate, bel_x];
 end
 
 figure(3)
@@ -118,6 +119,210 @@ xlabel('Time')
 ylabel('Certainty or Speed (m/s)');
 legend('Vehicle Speed','Stopped Probability Estimate', 'Not Stopped Probability Estimate')
 
+%% Bayes Filter for car 1
+% initialization
+bel_x_prev = [0.5; 0.5];
+p_x_xprev = [0.6, 0.25; 0.4, 0.75]; % transition matrix; values given in lab 2 manual
+myspeed = S_1; % speed vector for vehicle selected for filter
+estimate = [];
+
+for t = 1:length(myspeed)
+
+
+% prediction step
+bel_bar_x = p_x_xprev * bel_x_prev; % 2x1 mat = 2x2 mat + 2x1 mat
+
+% correction step
+bel_x = p_s_x(p_s_x_stopped, p_s_x_notstopped, myspeed(t)) .* bel_bar_x;
+bel_x = bel_x ./ sum(bel_x); % eta = 1/sum(bel_x)
+
+% step foward
+bel_x_prev = bel_x;
+estimate = [estimate, bel_x];
+end
+
+figure(4)
+%time = [1:length(myspeed)] .*0.5;
+time = (t_1 - 2) ./2;
+plot(time, myspeed)
+hold on
+plot(time, estimate(1,:),'o-')
+plot(time, estimate(2,:), 'o-')
+title('Bayes Filter Output and Speed for Car 1')
+xlabel('Time')
+ylabel('Certainty or Speed (m/s)');
+legend('Vehicle Speed','Stopped Probability Estimate', 'Not Stopped Probability Estimate')
+
+%% Bayes Filter for car 2
+% initialization
+bel_x_prev = [0.5; 0.5];
+p_x_xprev = [0.6, 0.25; 0.4, 0.75]; % transition matrix; values given in lab 2 manual
+myspeed = S_2; % speed vector for vehicle selected for filter
+estimate = [];
+
+for t = 1:length(myspeed)
+
+
+% prediction step
+bel_bar_x = p_x_xprev * bel_x_prev; % 2x1 mat = 2x2 mat + 2x1 mat
+
+% correction step
+bel_x = p_s_x(p_s_x_stopped, p_s_x_notstopped, myspeed(t)) .* bel_bar_x;
+bel_x = bel_x ./ sum(bel_x); % eta = 1/sum(bel_x)
+
+% step foward
+bel_x_prev = bel_x;
+estimate = [estimate, bel_x];
+end
+
+figure(5)
+%time = [1:length(myspeed)] .*0.5;
+time = (t_2 - 2) ./2;
+plot(time, myspeed)
+hold on
+plot(time, estimate(1,:),'o-')
+plot(time, estimate(2,:), 'o-')
+title('Bayes Filter Output and Speed for Car 2')
+xlabel('Time')
+ylabel('Certainty or Speed (m/s)');
+legend('Vehicle Speed','Stopped Probability Estimate', 'Not Stopped Probability Estimate')
+
+
+%% Bayes Filter for car 3
+% initialization
+bel_x_prev = [0.5; 0.5];
+p_x_xprev = [0.6, 0.25; 0.4, 0.75]; % transition matrix; values given in lab 2 manual
+myspeed = S_3; % speed vector for vehicle selected for filter
+estimate = [];
+
+for t = 1:length(myspeed)
+
+
+% prediction step
+bel_bar_x = p_x_xprev * bel_x_prev; % 2x1 mat = 2x2 mat + 2x1 mat
+
+% correction step
+bel_x = p_s_x(p_s_x_stopped, p_s_x_notstopped, myspeed(t)) .* bel_bar_x;
+bel_x = bel_x ./ sum(bel_x); % eta = 1/sum(bel_x)
+
+% step foward
+bel_x_prev = bel_x;
+estimate = [estimate, bel_x];
+end
+
+figure(6)
+%time = [1:length(myspeed)] .*0.5;
+time = (t_3 - 2) ./2;
+plot(time, myspeed)
+hold on
+plot(time, estimate(1,:),'o-')
+plot(time, estimate(2,:), 'o-')
+title('Bayes Filter Output and Speed for Car 3')
+xlabel('Time')
+ylabel('Certainty or Speed (m/s)');
+legend('Vehicle Speed','Stopped Probability Estimate', 'Not Stopped Probability Estimate')
+
+%% Bayes Filter for car 4
+% initialization
+bel_x_prev = [0.5; 0.5];
+p_x_xprev = [0.6, 0.25; 0.4, 0.75]; % transition matrix; values given in lab 2 manual
+myspeed = S_4; % speed vector for vehicle selected for filter
+estimate = [];
+
+for t = 1:length(myspeed)
+
+
+% prediction step
+bel_bar_x = p_x_xprev * bel_x_prev; % 2x1 mat = 2x2 mat + 2x1 mat
+
+% correction step
+bel_x = p_s_x(p_s_x_stopped, p_s_x_notstopped, myspeed(t)) .* bel_bar_x;
+bel_x = bel_x ./ sum(bel_x); % eta = 1/sum(bel_x)
+
+% step foward
+bel_x_prev = bel_x;
+estimate = [estimate, bel_x];
+end
+
+figure(7)
+%time = [1:length(myspeed)] .*0.5;
+time = (t_4 - 2) ./2;
+plot(time, myspeed)
+hold on
+plot(time, estimate(1,:),'o-')
+plot(time, estimate(2,:), 'o-')
+title('Bayes Filter Output and Speed for Car 4')
+xlabel('Time')
+ylabel('Certainty or Speed (m/s)');
+legend('Vehicle Speed','Stopped Probability Estimate', 'Not Stopped Probability Estimate')
+
+%% Bayes Filter for car 5
+% initialization
+bel_x_prev = [0.5; 0.5];
+p_x_xprev = [0.6, 0.25; 0.4, 0.75]; % transition matrix; values given in lab 2 manual
+myspeed = S_5; % speed vector for vehicle selected for filter
+estimate = [];
+
+for t = 1:length(myspeed)
+
+
+% prediction step
+bel_bar_x = p_x_xprev * bel_x_prev; % 2x1 mat = 2x2 mat + 2x1 mat
+
+% correction step
+bel_x = p_s_x(p_s_x_stopped, p_s_x_notstopped, myspeed(t)) .* bel_bar_x;
+bel_x = bel_x ./ sum(bel_x); % eta = 1/sum(bel_x)
+
+% step foward
+bel_x_prev = bel_x;
+estimate = [estimate, bel_x];
+end
+
+figure(8)
+%time = [1:length(myspeed)] .*0.5;
+time = (t_5 - 2) ./2;
+plot(time, myspeed)
+hold on
+plot(time, estimate(1,:),'o-')
+plot(time, estimate(2,:), 'o-')
+title('Bayes Filter Output and Speed for Car 5')
+xlabel('Time')
+ylabel('Certainty or Speed (m/s)');
+legend('Vehicle Speed','Stopped Probability Estimate', 'Not Stopped Probability Estimate')
+
+%% Bayes Filter for car 6
+% initialization
+bel_x_prev = [0.5; 0.5];
+p_x_xprev = [0.6, 0.25; 0.4, 0.75]; % transition matrix; values given in lab 2 manual
+myspeed = S_6; % speed vector for vehicle selected for filter
+estimate = [];
+
+for t = 1:length(myspeed)
+
+
+% prediction step
+bel_bar_x = p_x_xprev * bel_x_prev; % 2x1 mat = 2x2 mat + 2x1 mat
+
+% correction step
+bel_x = p_s_x(p_s_x_stopped, p_s_x_notstopped, myspeed(t)) .* bel_bar_x;
+bel_x = bel_x ./ sum(bel_x); % eta = 1/sum(bel_x)
+
+% step foward
+bel_x_prev = bel_x;
+estimate = [estimate, bel_x];
+end
+
+figure(9)
+%time = [1:length(myspeed)] .*0.5;
+time = (t_6 - 2) ./2;
+plot(time, myspeed)
+hold on
+plot(time, estimate(1,:),'o-')
+plot(time, estimate(2,:), 'o-')
+title('Bayes Filter Output and Speed for Car 6')
+xlabel('Time')
+ylabel('Certainty or Speed (m/s)');
+legend('Vehicle Speed','Stopped Probability Estimate', 'Not Stopped Probability Estimate')
 
 %% speed calculating function
 function [Sdata] = speed(Xdata,Ydata, t_array, tprev_array, deltat)
