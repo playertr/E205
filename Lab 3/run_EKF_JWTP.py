@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import math
 import os.path
+import pdb
 
 HEIGHT_THRESHOLD = 0.0  # meters
 GROUND_HEIGHT_THRESHOLD = -.4  # meters
@@ -22,7 +23,7 @@ DT = 0.1
 X_LANDMARK = 5.  # meters
 Y_LANDMARK = -5.  # meters
 EARTH_RADIUS = 6.3781E6  # meters
-DELTA_T = 100000 #us = 0.1 s
+DELTA_T = 100000  # us = 0.1 s
 
 
 def load_data(filename):
@@ -131,7 +132,8 @@ def convert_gps_to_xy(lat_gps, lon_gps, lat_origin, lon_origin):
     x_gps (float)          -- the converted x coordinate
     y_gps (float)          -- the converted y coordinate
     """
-    x_gps = EARTH_RADIUS*(math.pi/180.)*(lon_gps - lon_origin)*math.cos((math.pi/180.)*lat_origin)
+    x_gps = EARTH_RADIUS*(math.pi/180.)*(lon_gps - lon_origin) * \
+        math.cos((math.pi/180.)*lat_origin)
     y_gps = EARTH_RADIUS*(math.pi/180.)*(lat_gps - lat_origin)
 
     return x_gps, y_gps
@@ -181,13 +183,14 @@ def propogate_state(x_t_prev, u_t):
     x_t = x_dot_t * DELTA_T + x_prev
     y_t = y_dot_t * DELTA_T + y_prev
     theta_t = theta_dot_t * DELTA_T + theta_prev
-        theta_t = wrap_to_pi(theta_t)
+    theta_t = wrap_to_pi(theta_t)
     x_dot_t = a_x_t * DELTA_T + x_dot_prev
     y_dot_t = a_y_t * DELTA_T + y_dot_prev
     theta_dot_t = (theta_prev - theta_t_2)/DELTA_T
-        theta_dot_t = wrap_to_pi(theta_dot_t)
-    x_bar_t = np.array([x_t, y_t, theta_t, x_dot_t, y_dot_t, theta_dot_t, theta_prev])
-    x_bar_t = x_bar_t.reshape((7,1))
+    theta_dot_t = wrap_to_pi(theta_dot_t)
+    x_bar_t = np.array([x_t, y_t, theta_t, x_dot_t,
+                        y_dot_t, theta_dot_t, theta_prev])
+    x_bar_t = x_bar_t.reshape((7, 1))
     """STUDENT CODE END"""
 
     return x_bar_t
@@ -212,7 +215,7 @@ def calc_prop_jacobian_x(x_t_prev, u_t):
                       [0, 0, 1/DELTA_T, 0, 0, 0, -1/DELTA_T],
                       [0, 0, 1, 0, 0, 0, 0]
                       ])
-    G_x_t = G_x_t.reshape(7,7)       
+    G_x_t = G_x_t.reshape(7, 7)
     """STUDENT CODE END"""
 
     return G_x_t
@@ -230,8 +233,9 @@ def calc_prop_jacobian_u(x_t_prev, u_t):
     """
 
     """STUDENT CODE START"""
-    G_u_t = np.array([0,0, 0,0, 0,0, DELTA_T,0, 0,DELTA_T, 0,0, 0,0])  # add shape of matrix
-    G_u_t = G_u_t.reshape((7,2))
+    G_u_t = np.array([0, 0, 0, 0, 0, 0, DELTA_T, 0, 0,
+                      DELTA_T, 0, 0, 0, 0])  # add shape of matrix
+    G_u_t = G_u_t.reshape((7, 2))
 
     """STUDENT CODE END"""
 
@@ -253,7 +257,8 @@ def prediction_step(x_t_prev, u_t, sigma_x_t_prev):
 
     """STUDENT CODE START"""
     # Covariance matrix of control input
-    ??? sigma_u_t = np.zeros((,))  # get variance & mult to identity
+    # ??? sigma_u_t = np.zeros((,))  # get variance & mult to identity
+    sigma_u_t = 0.1 * np.eye(2)  # pretend variance of 0.1 m/s^2
 
     x_bar_t = propogate_state(x_t_prev, u_t)
 
@@ -282,11 +287,12 @@ def calc_meas_jacobian(x_bar_t):
     theta_t = x_bar_t[2]
     delta_x = X_LANDMARK - x_t
     delta_y = Y_LANDMARK - y_t
-    H_t = np.array ([[-1*np.cos(theta_t) , np.sin(theta_t) , -1*delta_x*np.sin(theta_t) - delta_y*np.cos(theta_t) , 0 , 0 , 0 , 0],
-                     [-1*np.sin(theta_t) , -1*np.cos(theta_t) , delta_x*np.cos(theta_t) - delta_y*np.sin(theta_t) , 0 , 0 , 0 , 0],
-                     [0, 0, 1, 0, 0, 0, 0]
-                     ])
-    H_t = H_t.reshape((3,7))
+    H_t = np.array([[-1*np.cos(theta_t), np.sin(theta_t), -1*delta_x*np.sin(theta_t) - delta_y*np.cos(theta_t), 0, 0, 0, 0],
+                    [-1*np.sin(theta_t), -1*np.cos(theta_t), delta_x *
+                     np.cos(theta_t) - delta_y*np.sin(theta_t), 0, 0, 0, 0],
+                    [0, 0, 1, 0, 0, 0, 0]
+                    ])
+    H_t = H_t.reshape((3, 7))
     """STUDENT CODE END"""
 
     return H_t
@@ -304,9 +310,16 @@ def calc_kalman_gain(sigma_x_bar_t, H_t):
     """
     """STUDENT CODE START"""
     # Covariance matrix of measurments
-    ??? sigma_z_t = np.empty((, )) #3x3
+    # ??? sigma_z_t = np.empty((, ))  # 3x3
+    sigma_xy = 0.1
+    sigma_theta = 0.01
+    sigma_z_t = np.array([sigma_xy, 0, 0],
+                         [0, sigma_xy, 0],
+                         [0, 0, sigma_theta])
+
     H_t_T = np.transpose(H_t)
-    K_t = sigma_x_bar_t * H_t_T * np.linalg. inv(H_t * sigma_x_bar_t * H_t_T + sigma_z_t)
+    K_t = sigma_x_bar_t * H_t_T * \
+        np.linalg. inv(H_t * sigma_x_bar_t * H_t_T + sigma_z_t)
     """STUDENT CODE END"""
 
     return K_t
@@ -335,7 +348,7 @@ def calc_meas_prediction(x_bar_t):
     z_theta = wrap_to_pi(theta_t)
 
     z_bar_t = np.array([z_xLL, z_yLL, z_theta])
-    z_bar_t = z_bar_t.reshape(3,1)
+    z_bar_t = z_bar_t.reshape(3, 1)
     """STUDENT CODE END"""
 
     return z_bar_t
@@ -369,7 +382,8 @@ def main():
     """Run a EKF on logged data from IMU and LiDAR moving in a box formation around a landmark"""
 
     filepath = "./logs/"
-    filename = 
+    filename = "2020_2_26__16_59_7"
+    #filename = "2020_2_26__17_21_59"
     data, is_filtered = load_data(filepath + filename)
 
     # Save filtered data so don't have to process unfiltered data everytime
@@ -393,10 +407,12 @@ def main():
     lat_origin = lat_gps[0]
     lon_origin = lon_gps[0]
 
+    pdb.set_trace()  # TIM ADDED THIS
     #  Initialize filter
     """STUDENT CODE START"""
-    N = 7 # number of states
-    state_est_t_prev = np.array([, ])
+    N = 7  # number of states
+    # assume it starts at the origin
+    state_est_t_prev = np.array([0, 0, 0, 0, 0, 0, 0])
     var_est_t_prev = np.identity(N)
 
     state_estimates = np.empty((N, len(time_stamps)))
@@ -408,13 +424,15 @@ def main():
     for t, _ in enumerate(time_stamps):
         # Get control input
         """STUDENT CODE START"""
-        u_t = np.array([, ]) # u_t = [a_x_t, a_y_t]
-                                # a_x_t - acceleration in x
-                                # a_y_t - acceleration in y
+        u_t = np.array([x_ddot, y_ddot]
+                       )  # u_t = [a_x_t, a_y_t] is a 2x815 array.
+        # a_x_t - acceleration in x
+        # a_y_t - acceleration in y
         """STUDENT CODE END"""
 
         # Prediction Step
-        state_pred_t, var_pred_t = prediction_step(state_est_t_prev, u_t, var_est_t_prev)
+        state_pred_t, var_pred_t = prediction_step(
+            state_est_t_prev, u_t, var_est_t_prev)
 
         # Get measurement
         """STUDENT CODE START"""
