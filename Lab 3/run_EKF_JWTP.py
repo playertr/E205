@@ -23,7 +23,7 @@ DT = 0.1
 X_LANDMARK = 5.  # meters
 Y_LANDMARK = -5.  # meters
 EARTH_RADIUS = 6.3781E6  # meters
-DELTA_T = 100000  # us = 0.1 s
+DELTA_T = 0.1  # assume "10^5" uS = 0.1 s
 
 
 def load_data(filename):
@@ -180,14 +180,14 @@ def propogate_state(x_t_prev, u_t):
     a_x_t = u_t[0]
     a_y_t = u_t[1]
 
-    x_t = x_dot_t * DELTA_T + x_prev
-    y_t = y_dot_t * DELTA_T + y_prev
-    theta_t = theta_dot_t * DELTA_T + theta_prev
+    x_t = x_dot_prev * DELTA_T + x_prev
+    y_t = y_dot_prev * DELTA_T + y_prev
+    theta_t = theta_dot_prev * DELTA_T + theta_prev
     theta_t = wrap_to_pi(theta_t)
     x_dot_t = a_x_t * DELTA_T + x_dot_prev
     y_dot_t = a_y_t * DELTA_T + y_dot_prev
     theta_dot_t = (theta_prev - theta_t_2)/DELTA_T
-    theta_dot_t = wrap_to_pi(theta_dot_t)
+    # theta_dot_t = wrap_to_pi(theta_dot_t) I'm not sure wrapping this is necessary -Tim
     x_bar_t = np.array([x_t, y_t, theta_t, x_dot_t,
                         y_dot_t, theta_dot_t, theta_prev])
     x_bar_t = x_bar_t.reshape((7, 1))
@@ -211,7 +211,7 @@ def calc_prop_jacobian_x(x_t_prev, u_t):
                       [0, 1, 0, 0, DELTA_T, 0, 0],
                       [0, 0, 1, 0, 0, DELTA_T, 0],
                       [0, 0, 0, 1, 0, 0, 0],
-                      [0, 0, 0, 0, 1, 0, 0]
+                      [0, 0, 0, 0, 1, 0, 0],
                       [0, 0, 1/DELTA_T, 0, 0, 0, -1/DELTA_T],
                       [0, 0, 1, 0, 0, 0, 0]
                       ])
@@ -258,7 +258,7 @@ def prediction_step(x_t_prev, u_t, sigma_x_t_prev):
     """STUDENT CODE START"""
     # Covariance matrix of control input
     # ??? sigma_u_t = np.zeros((,))  # get variance & mult to identity
-    sigma_u_t = 0.1 * np.eye(2)  # pretend variance of 0.1 m/s^2
+    sigma_u_t = 0.1 * np.eye(2)  # assume variance of 0.1 m/s^2
 
     x_bar_t = propogate_state(x_t_prev, u_t)
 
@@ -266,7 +266,8 @@ def prediction_step(x_t_prev, u_t, sigma_x_t_prev):
     G_u_t = calc_prop_jacobian_u(x_t_prev, u_t)
     G_x_t_T = np.transpose(G_x_t)
     G_u_t_T = np.transpose(G_u_t)
-    sigma_x_bar_t = G_x_t * sigma_x_t_prev * G_x_t_T + G_u_t * sigma_u_t * G_u_t_T
+    sigma_x_bar_t = G_x_t.dot(sigma_x_t_prev).dot(
+        G_x_t_T) + G_u_t.dot(sigma_u_t).dot(G_u_t_T)  # I changed * to .dot() for matrix mult -Tim
     """STUDENT CODE END"""
 
     return [x_bar_t, sigma_x_bar_t]
@@ -284,9 +285,10 @@ def calc_meas_jacobian(x_bar_t):
     """STUDENT CODE START"""
     x_t = x_bar_t[0]
     y_t = x_bar_t[1]
-    theta_t = x_bar_t[2]
+    theta_t = x_bar_t[2][0]  # must access the first element for some reason
     delta_x = X_LANDMARK - x_t
     delta_y = Y_LANDMARK - y_t
+    pdb.set_trace()  # Tim was debugging here (figuring out why the array included an object)
     H_t = np.array([[-1*np.cos(theta_t), np.sin(theta_t), -1*delta_x*np.sin(theta_t) - delta_y*np.cos(theta_t), 0, 0, 0, 0],
                     [-1*np.sin(theta_t), -1*np.cos(theta_t), delta_x *
                      np.cos(theta_t) - delta_y*np.sin(theta_t), 0, 0, 0, 0],
@@ -313,13 +315,14 @@ def calc_kalman_gain(sigma_x_bar_t, H_t):
     # ??? sigma_z_t = np.empty((, ))  # 3x3
     sigma_xy = 0.1
     sigma_theta = 0.01
-    sigma_z_t = np.array([sigma_xy, 0, 0],
-                         [0, sigma_xy, 0],
-                         [0, 0, sigma_theta])
+    sigma_z_t = np.array([[sigma_xy, 0, 0],
+                          [0, sigma_xy, 0],
+                          [0, 0, sigma_theta]])
 
     H_t_T = np.transpose(H_t)
-    K_t = sigma_x_bar_t * H_t_T * \
-        np.linalg. inv(H_t * sigma_x_bar_t * H_t_T + sigma_z_t)
+    pdb.set_trace()
+    K_t = sigma_x_bar_t.dot(H_t_T).dot(
+        np.linalg.inv(H_t.dot(sigma_x_bar_t).dot(H_t_T) + sigma_z_t))
     """STUDENT CODE END"""
 
     return K_t
@@ -383,7 +386,7 @@ def main():
 
     filepath = "./logs/"
     filename = "2020_2_26__16_59_7"
-    #filename = "2020_2_26__17_21_59"
+    # filename = "2020_2_26__17_21_59"
     data, is_filtered = load_data(filepath + filename)
 
     # Save filtered data so don't have to process unfiltered data everytime
@@ -407,7 +410,6 @@ def main():
     lat_origin = lat_gps[0]
     lon_origin = lon_gps[0]
 
-    pdb.set_trace()  # TIM ADDED THIS
     #  Initialize filter
     """STUDENT CODE START"""
     N = 7  # number of states
@@ -436,7 +438,7 @@ def main():
 
         # Get measurement
         """STUDENT CODE START"""
-        z_t = np.array([, ])
+        z_t = np.array([x_lidar[t], y_lidar[t], yaw_lidar[t]])
         """STUDENT CODE END"""
 
         # Correction Step
@@ -460,6 +462,9 @@ def main():
 
     """STUDENT CODE START"""
     # Plot or print results here
+    plt.plot(gps_estimates, 'r.')
+    plt.show()
+    pdb.set_trace()
     """STUDENT CODE END"""
     return 0
 
