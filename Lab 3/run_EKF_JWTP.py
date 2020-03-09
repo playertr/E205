@@ -352,8 +352,12 @@ def calc_meas_prediction(x_bar_t):
     delta_x = X_LANDMARK - x_t
     delta_y = Y_LANDMARK - y_t
 
-    z_xLL = np.cos(theta_t) * delta_x - np.sin(theta_t) * delta_y
-    z_yLL = np.sin(theta_t) * delta_x + np.cos(theta_t) * delta_y
+    # Tim has the derivation for this
+    z_xLL = np.sin(theta_t) * delta_x - np.cos(theta_t) * delta_y
+    z_yLL = np.cos(theta_t) * delta_x + np.sin(theta_t) * delta_y
+
+    # z_xLL = np.cos(theta_t) * delta_x - np.sin(theta_t) * delta_y
+    # z_yLL = np.sin(theta_t) * delta_x + np.cos(theta_t) * delta_y
     z_theta = theta_t
 
     z_bar_t = np.array([z_xLL, z_yLL, z_theta])
@@ -428,7 +432,6 @@ def main():
     covariance_estimates = np.empty((N, N, len(time_stamps)))
     gps_estimates = np.empty((2, len(time_stamps)))
     """STUDENT CODE END"""
-    pdb.set_trace()
     #  Run filter over data
     for t, _ in enumerate(time_stamps):
         # Get control input
@@ -439,8 +442,6 @@ def main():
         # a_x_t - acceleration in x
         # a_y_t - acceleration in y
         """STUDENT CODE END"""
-        # if t == 4:
-        # pdb.set_trace()
 
         # Prediction Step
         state_pred_t, var_pred_t = prediction_step(
@@ -474,11 +475,13 @@ def main():
         """STUDENT CODE START"""
         # Plot or print results here
         plt.subplot(2, 1, 1)
-        plt.plot(gps_estimates[0, t], gps_estimates[1, t], 'r.', label='GPS')
-        plt.plot(state_estimates[0, t], state_estimates[1,
-                                                        t], 'b.', label='Estimated State')
-        plt.plot(state_pred_t[0], state_pred_t[1],
-                 'k.', label='Prediction Step')
+        plt.plot(gps_estimates[0, t], gps_estimates[1, t], 'b.', label='GPS')
+
+        plt.quiver(state_estimates[0, t], state_estimates[1, t], np.cos(
+            state_estimates[2, t]), np.sin(state_estimates[2, t]), color='r')
+
+        plt.quiver(state_pred_t[0], state_pred_t[1],
+                   np.cos(state_pred_t[2]), np.sin(state_pred_t[2]), color='g')
 
         plt.xlim(-4, 14)
         plt.ylim(-14, 4)
@@ -496,7 +499,8 @@ def main():
         if t == 0:
             plt.legend()
 
-        plt.pause(0.001)
+        plt.pause(3)
+        # pdb.set_trace()
 
         """STUDENT CODE END"""
     pdb.set_trace()
