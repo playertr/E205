@@ -177,20 +177,25 @@ def propogate_state(x_t_prev, u_t):
     theta_dot_prev = x_t_prev[5]
     theta_t_2 = x_t_prev[6]
 
-    a_x_t = u_t[0]
-    a_y_t = u_t[1]
-
     x_t = x_dot_prev * DELTA_T + x_prev
     y_t = y_dot_prev * DELTA_T + y_prev
     theta_t = theta_dot_prev * DELTA_T + theta_prev
     theta_t = wrap_to_pi(theta_t)
-    x_dot_t = a_x_t * DELTA_T + x_dot_prev
-    y_dot_t = a_y_t * DELTA_T + y_dot_prev
+
+    # the global frame acceleration is a function of yaw (theta_t)
+    # and the ass-backwards, fucked up accelerometer measurements
+    a_x_L = u_t[0]  # forward
+    a_y_L = u_t[1]  # left
+    a_x_G = u_t[0] * np.cos(theta_t) - u_t[1] * np.sin(theta_t)
+    a_y_G = u_t[0] * np.sin(theta_t) + u_t[1] * np.cos(theta_t)
+
+    x_dot_t = a_x_G * DELTA_T + x_dot_prev
+    y_dot_t = a_y_G * DELTA_T + y_dot_prev
     theta_dot_t = (theta_prev - theta_t_2)/DELTA_T
     # theta_dot_t = wrap_to_pi(theta_dot_t) I'm not sure wrapping this is necessary -Tim
+
     x_bar_t = np.array([x_t, y_t, theta_t, x_dot_t,
                         y_dot_t, theta_dot_t, theta_prev])
-    x_bar_t = x_bar_t.reshape((7, 1))
     """STUDENT CODE END"""
 
     return x_bar_t
@@ -215,7 +220,6 @@ def calc_prop_jacobian_x(x_t_prev, u_t):
                       [0, 0, 1/DELTA_T, 0, 0, 0, -1/DELTA_T],
                       [0, 0, 1, 0, 0, 0, 0]
                       ])
-    G_x_t = G_x_t.reshape(7, 7)
     """STUDENT CODE END"""
 
     return G_x_t
@@ -233,9 +237,13 @@ def calc_prop_jacobian_u(x_t_prev, u_t):
     """
 
     """STUDENT CODE START"""
-    G_u_t = np.array([0, 0, 0, 0, 0, 0, DELTA_T, 0, 0,
-                      DELTA_T, 0, 0, 0, 0])  # add shape of matrix
-    G_u_t = G_u_t.reshape((7, 2))
+    G_u_t = np.array([[0, 0],
+                      [0, 0],
+                      [0, 0],
+                      [DELTA_T, 0],
+                      [0, DELTA_T],
+                      [0, 0],
+                      [0, 0]])
 
     """STUDENT CODE END"""
 
@@ -285,16 +293,15 @@ def calc_meas_jacobian(x_bar_t):
     """STUDENT CODE START"""
     x_t = x_bar_t[0]
     y_t = x_bar_t[1]
-    theta_t = x_bar_t[2][0]  # must access the first element for some reason
+    theta_t = x_bar_t[2]  # must access the first element for some reason
     delta_x = X_LANDMARK - x_t
     delta_y = Y_LANDMARK - y_t
-    pdb.set_trace()  # Tim was debugging here (figuring out why the array included an object)
+    #   # Tim was debugging here (figuring out why the array included an object)
     H_t = np.array([[-1*np.cos(theta_t), np.sin(theta_t), -1*delta_x*np.sin(theta_t) - delta_y*np.cos(theta_t), 0, 0, 0, 0],
                     [-1*np.sin(theta_t), -1*np.cos(theta_t), delta_x *
                      np.cos(theta_t) - delta_y*np.sin(theta_t), 0, 0, 0, 0],
                     [0, 0, 1, 0, 0, 0, 0]
                     ])
-    H_t = H_t.reshape((3, 7))
     """STUDENT CODE END"""
 
     return H_t
@@ -320,7 +327,6 @@ def calc_kalman_gain(sigma_x_bar_t, H_t):
                           [0, 0, sigma_theta]])
 
     H_t_T = np.transpose(H_t)
-    pdb.set_trace()
     K_t = sigma_x_bar_t.dot(H_t_T).dot(
         np.linalg.inv(H_t.dot(sigma_x_bar_t).dot(H_t_T) + sigma_z_t))
     """STUDENT CODE END"""
@@ -348,10 +354,9 @@ def calc_meas_prediction(x_bar_t):
 
     z_xLL = np.cos(theta_t) * delta_x - np.sin(theta_t) * delta_y
     z_yLL = np.sin(theta_t) * delta_x + np.cos(theta_t) * delta_y
-    z_theta = wrap_to_pi(theta_t)
+    z_theta = theta_t
 
     z_bar_t = np.array([z_xLL, z_yLL, z_theta])
-    z_bar_t = z_bar_t.reshape(3, 1)
     """STUDENT CODE END"""
 
     return z_bar_t
@@ -374,11 +379,12 @@ def correction_step(x_bar_t, z_t, sigma_x_bar_t):
     H_t = calc_meas_jacobian(x_bar_t)
     K_t = calc_kalman_gain(sigma_x_bar_t, H_t)
     z_bar_t = calc_meas_prediction(x_bar_t)
-    x_est_t = x_bar_t + K_t * (z_t - z_bar_t)
-    sigma_x_est_t = (np.eye(7) - K_t * H_t) * sigma_x_bar_t
+    x_est_t = x_bar_t + K_t.dot(z_t - z_bar_t)
+    sigma_x_est_t = (np.eye(7) - K_t.dot(H_t)).dot(sigma_x_bar_t)
+
     """STUDENT CODE END"""
 
-    return [x_est_t, sigma_x_est_t]
+    return [x_est_t, sigma_x_est_t, z_bar_t]
 
 
 def main():
@@ -401,7 +407,8 @@ def main():
     time_stamps = data["Time Stamp"]
     lat_gps = data["Latitude"]
     lon_gps = data["Longitude"]
-    yaw_lidar = data["Yaw"]
+    # Tim changed yaw to radians
+    yaw_lidar = [x * np.pi / 180 for x in data["Yaw"]]
     pitch_lidar = data["Pitch"]
     roll_lidar = data["Roll"]
     x_ddot = data["AccelX"]
@@ -414,23 +421,26 @@ def main():
     """STUDENT CODE START"""
     N = 7  # number of states
     # assume it starts at the origin
-    state_est_t_prev = np.array([0, 0, 0, 0, 0, 0, 0])
+    state_est_t_prev = np.array([0, 0, yaw_lidar[0], 0, 0, 0, yaw_lidar[0]])
     var_est_t_prev = np.identity(N)
 
     state_estimates = np.empty((N, len(time_stamps)))
     covariance_estimates = np.empty((N, N, len(time_stamps)))
     gps_estimates = np.empty((2, len(time_stamps)))
     """STUDENT CODE END"""
-
+    pdb.set_trace()
     #  Run filter over data
     for t, _ in enumerate(time_stamps):
         # Get control input
         """STUDENT CODE START"""
-        u_t = np.array([x_ddot, y_ddot]
+
+        u_t = np.array([x_ddot[t], y_ddot[t]]  # since x_ddot is
                        )  # u_t = [a_x_t, a_y_t] is a 2x815 array.
         # a_x_t - acceleration in x
         # a_y_t - acceleration in y
         """STUDENT CODE END"""
+        # if t == 4:
+        # pdb.set_trace()
 
         # Prediction Step
         state_pred_t, var_pred_t = prediction_step(
@@ -442,15 +452,16 @@ def main():
         """STUDENT CODE END"""
 
         # Correction Step
-        state_est_t, var_est_t = correction_step(state_pred_t,
-                                                 z_t,
-                                                 var_pred_t)
+        state_est_t, var_est_t, z_bar_t = correction_step(state_pred_t,
+                                                          z_t,
+                                                          var_pred_t)
 
         #  For clarity sake/teaching purposes, we explicitly update t->(t-1)
         state_est_t_prev = state_est_t
         var_est_t_prev = var_est_t
 
         # Log Data
+
         state_estimates[:, t] = state_est_t
         covariance_estimates[:, :, t] = var_est_t
 
@@ -460,12 +471,36 @@ def main():
                                          lon_origin=lon_origin)
         gps_estimates[:, t] = np.array([x_gps, y_gps])
 
-    """STUDENT CODE START"""
-    # Plot or print results here
-    plt.plot(gps_estimates, 'r.')
-    plt.show()
+        """STUDENT CODE START"""
+        # Plot or print results here
+        plt.subplot(2, 1, 1)
+        plt.plot(gps_estimates[0, t], gps_estimates[1, t], 'r.', label='GPS')
+        plt.plot(state_estimates[0, t], state_estimates[1,
+                                                        t], 'b.', label='Estimated State')
+        plt.plot(state_pred_t[0], state_pred_t[1],
+                 'k.', label='Prediction Step')
+
+        plt.xlim(-4, 14)
+        plt.ylim(-14, 4)
+        plt.xlabel('East (m)')
+        plt.ylabel('North (m)')
+        if t == 0:
+            plt.legend()
+
+        plt.subplot(2, 1, 2)
+        plt.plot(z_bar_t[0], z_bar_t[1], 'r.', label='Estimated Z')
+        plt.plot(z_t[0], z_t[1], 'k.', label='Actual Z')
+
+        plt.xlabel('Right (m)')
+        plt.ylabel('Forward (m)')
+        if t == 0:
+            plt.legend()
+
+        plt.pause(0.001)
+
+        """STUDENT CODE END"""
     pdb.set_trace()
-    """STUDENT CODE END"""
+    # plt.show()
     return 0
 
 
