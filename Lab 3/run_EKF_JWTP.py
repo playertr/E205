@@ -192,7 +192,8 @@ def propogate_state(x_t_prev, u_t):
     x_dot_t = a_x_G * DELTA_T + x_dot_prev
     y_dot_t = a_y_G * DELTA_T + y_dot_prev
     theta_dot_t = (theta_prev - theta_t_2)/DELTA_T
-    # theta_dot_t = wrap_to_pi(theta_dot_t) I'm not sure wrapping this is necessary -Tim
+    # I'm not sure wrapping this is necessary -Tim
+    theta_dot_t = wrap_to_pi(theta_dot_t)
 
     x_bar_t = np.array([x_t, y_t, theta_t, x_dot_t,
                         y_dot_t, theta_dot_t, theta_prev])
@@ -212,11 +213,17 @@ def calc_prop_jacobian_x(x_t_prev, u_t):
     G_x_t (np.array)    -- Jacobian of motion model wrt to x
     """
     """STUDENT CODE START"""
+    theta_prev = x_t_prev[2]
+    c = np.cos(theta_prev)
+    s = np.sin(theta_prev)
+    u0 = u_t[0]
+    u1 = u_t[1]
+
     G_x_t = np.array([[1, 0, 0, DELTA_T, 0, 0, 0],
                       [0, 1, 0, 0, DELTA_T, 0, 0],
                       [0, 0, 1, 0, 0, DELTA_T, 0],
-                      [0, 0, 0, 1, 0, 0, 0],
-                      [0, 0, 0, 0, 1, 0, 0],
+                      [0, 0, (-u0*s - u1*c)*DELTA_T, 1, 0, 0, 0],
+                      [0, 0, (u0*c - u1*s)*DELTA_T, 0, 1, 0, 0],
                       [0, 0, 1/DELTA_T, 0, 0, 0, -1/DELTA_T],
                       [0, 0, 1, 0, 0, 0, 0]
                       ])
@@ -237,11 +244,14 @@ def calc_prop_jacobian_u(x_t_prev, u_t):
     """
 
     """STUDENT CODE START"""
+    theta_prev = x_t_prev[2]
+    c = np.cos(theta_prev)
+    s = np.sin(theta_prev)
     G_u_t = np.array([[0, 0],
                       [0, 0],
                       [0, 0],
-                      [DELTA_T, 0],
-                      [0, DELTA_T],
+                      [DELTA_T*c, -DELTA_T*s],
+                      [DELTA_T*s, DELTA_T*c],
                       [0, 0],
                       [0, 0]])
 
@@ -265,8 +275,7 @@ def prediction_step(x_t_prev, u_t, sigma_x_t_prev):
 
     """STUDENT CODE START"""
     # Covariance matrix of control input
-    # ??? sigma_u_t = np.zeros((,))  # get variance & mult to identity
-    sigma_u_t = 0.1 * np.eye(2)  # assume variance of 0.1 m/s^2
+    sigma_u_t = 1 * np.eye(2)  # assume variance of 1 m/s^2
 
     x_bar_t = propogate_state(x_t_prev, u_t)
 
@@ -296,12 +305,18 @@ def calc_meas_jacobian(x_bar_t):
     theta_t = x_bar_t[2]  # must access the first element for some reason
     delta_x = X_LANDMARK - x_t
     delta_y = Y_LANDMARK - y_t
-    #   # Tim was debugging here (figuring out why the array included an object)
-    H_t = np.array([[-1*np.cos(theta_t), np.sin(theta_t), -1*delta_x*np.sin(theta_t) - delta_y*np.cos(theta_t), 0, 0, 0, 0],
-                    [-1*np.sin(theta_t), -1*np.cos(theta_t), delta_x *
-                     np.cos(theta_t) - delta_y*np.sin(theta_t), 0, 0, 0, 0],
-                    [0, 0, 1, 0, 0, 0, 0]
-                    ])
+
+    c = np.cos(theta_t)
+    s = np.sin(theta_t)
+    H_t = np.array([[-1*s, c, c*delta_x + s*delta_y, 0, 0, 0, 0],
+                    [-1*c, -1*s, -1*s*delta_x + c*delta_y, 0, 0, 0, 0],
+                    [0, 0, 1, 0, 0, 0, 0]])
+
+    # H_t = np.array([[-1*np.cos(theta_t), np.sin(theta_t), -1*delta_x*np.sin(theta_t) - delta_y*np.cos(theta_t), 0, 0, 0, 0],
+    #                [-1*np.sin(theta_t), -1*np.cos(theta_t), delta_x *
+    #                 np.cos(theta_t) - delta_y*np.sin(theta_t), 0, 0, 0, 0],
+    #                [0, 0, 1, 0, 0, 0, 0]
+    #                ])
     """STUDENT CODE END"""
 
     return H_t
@@ -412,7 +427,7 @@ def main():
     lat_gps = data["Latitude"]
     lon_gps = data["Longitude"]
     # Tim changed yaw to radians
-    yaw_lidar = [x * np.pi / 180 for x in data["Yaw"]]
+    yaw_lidar = [wrap_to_pi(x * -np.pi / 180) for x in data["Yaw"]]
     pitch_lidar = data["Pitch"]
     roll_lidar = data["Roll"]
     x_ddot = data["AccelX"]
@@ -474,37 +489,60 @@ def main():
 
         """STUDENT CODE START"""
         # Plot or print results here
-        plt.subplot(2, 1, 1)
-        plt.plot(gps_estimates[0, t], gps_estimates[1, t], 'b.', label='GPS')
+        if np.mod(t, 5) == 0:
+            plt.subplot(2, 1, 1)
+            plt.plot(gps_estimates[0, t],
+                     gps_estimates[1, t], 'b.', label='GPS')
 
-        plt.quiver(state_estimates[0, t], state_estimates[1, t], np.cos(
-            state_estimates[2, t]), np.sin(state_estimates[2, t]), color='r')
+            plt.quiver(state_estimates[0, t], state_estimates[1, t], np.cos(
+                state_estimates[2, t]), np.sin(state_estimates[2, t]), color='r')
 
-        plt.quiver(state_pred_t[0], state_pred_t[1],
-                   np.cos(state_pred_t[2]), np.sin(state_pred_t[2]), color='g')
+            plt.quiver(state_estimates[0, t], state_estimates[1, t], np.cos(
+                z_t[2]), np.sin(z_t[2]), color='g')
 
-        plt.xlim(-4, 14)
-        plt.ylim(-14, 4)
-        plt.xlabel('East (m)')
-        plt.ylabel('North (m)')
-        if t == 0:
-            plt.legend()
+            plt.xlim(-4, 14)
+            plt.ylim(-14, 4)
+            plt.xlabel('East (m)')
+            plt.ylabel('North (m)')
+            if t == 0:
+                plt.legend()
 
-        plt.subplot(2, 1, 2)
-        plt.plot(z_bar_t[0], z_bar_t[1], 'r.', label='Estimated Z')
-        plt.plot(z_t[0], z_t[1], 'k.', label='Actual Z')
+            plt.subplot(2, 1, 2)
+            plt.plot(z_bar_t[0], z_bar_t[1], 'r.', label='Estimated Z')
+            plt.plot(z_t[0], z_t[1], 'k.', label='Actual Z')
 
-        plt.xlabel('Right (m)')
-        plt.ylabel('Forward (m)')
-        if t == 0:
-            plt.legend()
+            plt.xlabel('Right (m)')
+            plt.ylabel('Forward (m)')
+            if t == 0:
+                plt.legend()
 
-        plt.pause(3)
-        # pdb.set_trace()
+            print(t)
+            plt.pause(0.01)
 
+            if t == 400:
+                pdb.set_trace()
+            # At t=450, the compass is facing left (West) but it doesn't seem to think it's to the south of the landmark.
         """STUDENT CODE END"""
-    pdb.set_trace()
-    # plt.show()
+
+    plt.subplot(2, 1, 1)
+    plt.plot(gps_estimates[0, :], gps_estimates[1, :], 'b.', label='GPS')
+
+    plt.plot(state_estimates[0, :], state_estimates[1,
+                                                    :], color='r', label='State Estimate')
+
+    plt.xlim(-4, 14)
+    plt.ylim(-14, 4)
+    plt.xlabel('East (m)')
+    plt.ylabel('North (m)')
+    plt.legend()
+
+    plt.subplot(2, 1, 2)
+    plt.plot(z_bar_t[0], z_bar_t[1], 'r.', label='Estimated Z')
+    plt.plot(z_t[0], z_t[1], 'k.', label='Actual Z')
+
+    plt.xlabel('Right (m)')
+    plt.ylabel('Forward (m)')
+    plt.show()
     return 0
 
 
