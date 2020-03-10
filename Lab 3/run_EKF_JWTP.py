@@ -334,7 +334,6 @@ def calc_kalman_gain(sigma_x_bar_t, H_t):
     """
     """STUDENT CODE START"""
     # Covariance matrix of measurments
-    # ??? sigma_z_t = np.empty((, ))  # 3x3
     sigma_xy = 0.1
     sigma_theta = 0.01
     sigma_z_t = np.array([[sigma_xy, 0, 0],
@@ -371,8 +370,6 @@ def calc_meas_prediction(x_bar_t):
     z_xLL = np.sin(theta_t) * delta_x - np.cos(theta_t) * delta_y
     z_yLL = np.cos(theta_t) * delta_x + np.sin(theta_t) * delta_y
 
-    # z_xLL = np.cos(theta_t) * delta_x - np.sin(theta_t) * delta_y
-    # z_yLL = np.sin(theta_t) * delta_x + np.cos(theta_t) * delta_y
     z_theta = theta_t
 
     z_bar_t = np.array([z_xLL, z_yLL, z_theta])
@@ -405,11 +402,63 @@ def correction_step(x_bar_t, z_t, sigma_x_bar_t):
 
     return [x_est_t, sigma_x_est_t, z_bar_t]
 
+def confidence_ellipse(x, y, ax, n_std=3.0, facecolor='none', **kwargs):
+    """
+    Create a plot of the covariance confidence ellipse of *x* and *y*.
+
+    Parameters
+    ----------
+    x, y : array-like, shape (n, )
+        Input data.
+
+    ax : matplotlib.axes.Axes
+        The axes object to draw the ellipse into.
+
+    n_std : float
+        The number of standard deviations to determine the ellipse's radiuses.
+
+    Returns
+    -------
+    matplotlib.patches.Ellipse
+
+    Other parameters
+    ----------------
+    kwargs : `~matplotlib.patches.Patch` properties
+    """
+    if x.size != y.size:
+        raise ValueError("x and y must be the same size")
+
+    cov = np.cov(x, y)
+    pearson = cov[0, 1]/np.sqrt(cov[0, 0] * cov[1, 1])
+    # Using a special case to obtain the eigenvalues of this
+    # two-dimensionl dataset.
+    ell_radius_x = np.sqrt(1 + pearson)
+    ell_radius_y = np.sqrt(1 - pearson)
+    ellipse = Ellipse((0, 0), width=ell_radius_x * 2, height=ell_radius_y * 2,
+                      facecolor=facecolor, **kwargs)
+
+    # Calculating the stdandard deviation of x from
+    # the squareroot of the variance and multiplying
+    # with the given number of standard deviations.
+    scale_x = np.sqrt(cov[0, 0]) * n_std
+    mean_x = np.mean(x)
+
+    # calculating the stdandard deviation of y ...
+    scale_y = np.sqrt(cov[1, 1]) * n_std
+    mean_y = np.mean(y)
+
+    transf = transforms.Affine2D() \
+        .rotate_deg(45) \
+        .scale(scale_x, scale_y) \
+        .translate(mean_x, mean_y)
+
+    ellipse.set_transform(transf + ax.transData)
+    return ax.add_patch(ellipse)
 
 def main():
     """Run a EKF on logged data from IMU and LiDAR moving in a box formation around a landmark"""
 
-    filepath = "./logs/"
+    filepath = "./"
     filename = "2020_2_26__16_59_7"
     # filename = "2020_2_26__17_21_59"
     data, is_filtered = load_data(filepath + filename)
@@ -446,16 +495,18 @@ def main():
     state_estimates = np.empty((N, len(time_stamps)))
     covariance_estimates = np.empty((N, N, len(time_stamps)))
     gps_estimates = np.empty((2, len(time_stamps)))
+    errorsq = np.empty(len(time_stamps))
+    RMSE = np.empty(len(time_stamps))
+    expected_path_x = np.empty(len(time_stamps))
+    expected_path_y = np.empty(len(time_stamps))
+    expected_path_theta = np.empty(len(time_stamps))
     """STUDENT CODE END"""
+
     #  Run filter over data
     for t, _ in enumerate(time_stamps):
         # Get control input
         """STUDENT CODE START"""
-
-        u_t = np.array([x_ddot[t], y_ddot[t]]  # since x_ddot is
-                       )  # u_t = [a_x_t, a_y_t] is a 2x815 array.
-        # a_x_t - acceleration in x
-        # a_y_t - acceleration in y
+        u_t = np.array([x_ddot[t], y_ddot[t]])  
         """STUDENT CODE END"""
 
         # Prediction Step
@@ -468,16 +519,18 @@ def main():
         """STUDENT CODE END"""
 
         # Correction Step
-        state_est_t, var_est_t, z_bar_t = correction_step(state_pred_t,
-                                                          z_t,
-                                                          var_pred_t)
+        if np.mod(t,2):
+            state_est_t = state_pred_t
+            var_est_t = var_pred_t
+            z_bar_t = z_t
+        else:
+            state_est_t, var_est_t, z_bar_t = correction_step(state_pred_t, z_t, var_pred_t)
 
         #  For clarity sake/teaching purposes, we explicitly update t->(t-1)
         state_est_t_prev = state_est_t
         var_est_t_prev = var_est_t
 
         # Log Data
-
         state_estimates[:, t] = state_est_t
         covariance_estimates[:, :, t] = var_est_t
 
@@ -487,27 +540,44 @@ def main():
                                          lon_origin=lon_origin)
         gps_estimates[:, t] = np.array([x_gps, y_gps])
 
+        # RMSE
+        #expected_path_x = 0 to 10 to 10 back to 0 to 0
+        #expected_path_y = 0 to  0 to -10 to -10 back to 0
+        if (0 < t < 200):
+            errorsq[t] = (0 - state_est_t[2])**2
+        elif (200 < t < 400):
+            errorsq[t] = (10 - state_est_t[1])**2
+        elif (400 < t < 600):
+            errorsq[t] = (-10 - state_est_t[2])**2
+        else: # 600 < t < 810
+            errorsq[t] = (0 - state_est_t[1])**2
+        RMSE[t] = np.sqrt(np.sum(errorsq[0:t]/t))
+
         """STUDENT CODE START"""
         # Plot or print results here
         if np.mod(t, 5) == 0:
-            plt.subplot(2, 1, 1)
-            plt.plot(gps_estimates[0, t],
-                     gps_estimates[1, t], 'b.', label='GPS')
-
+            plt.subplot(2, 2, 1)
             plt.quiver(state_estimates[0, t], state_estimates[1, t], np.cos(
                 state_estimates[2, t]), np.sin(state_estimates[2, t]), color='r')
 
             plt.quiver(state_estimates[0, t], state_estimates[1, t], np.cos(
                 z_t[2]), np.sin(z_t[2]), color='g')
 
+            plt.plot(gps_estimates[0, t],
+                     gps_estimates[1, t], 'b.', label='GPS')
             plt.xlim(-4, 14)
             plt.ylim(-14, 4)
             plt.xlabel('East (m)')
             plt.ylabel('North (m)')
             if t == 0:
+                expected_path_x = [0, 10, 10, 0, 0]
+                expected_path_y = [0, 0, -10, -10, 0]
+                plt.plot(expected_path_x,expected_path_y, 'k')
                 plt.legend()
+                plt.plot(X_LANDMARK,Y_LANDMARK, 'mo', label='Landmark Location')
 
-            plt.subplot(2, 1, 2)
+
+            plt.subplot(2, 2, 2)
             plt.plot(z_bar_t[0], z_bar_t[1], 'r.', label='Estimated Z')
             plt.plot(z_t[0], z_t[1], 'k.', label='Actual Z')
 
@@ -516,33 +586,37 @@ def main():
             if t == 0:
                 plt.legend()
 
+            plt.subplot(2, 2, 3)
+            plt.plot(t, RMSE[t], 'k.')
+
+            plt.xlabel('Timestep')
+            plt.ylabel('RMS Error')
+            if t == 0:
+                plt.legend()
+
+
+            plt.subplot(2, 2, 3)
+            plt.plot(t, RMSE[t], 'k.')
+
+            plt.xlabel('Timestep')
+            plt.ylabel('RMS Error')
+            if t == 0:
+                plt.legend()
+
+            plt.subplot(2, 2, 4)
+            plt.plot(t, state_est_t[3], 'g.')
+            plt.xlabel('Timestep')
+            plt.ylabel('Yaw (Radians)')
+            if t == 0:
+                plt.legend()
+
             print(t)
             plt.pause(0.01)
 
-            if t == 400:
+            if t == 810:
                 pdb.set_trace()
             # At t=450, the compass is facing left (West) but it doesn't seem to think it's to the south of the landmark.
         """STUDENT CODE END"""
-
-    plt.subplot(2, 1, 1)
-    plt.plot(gps_estimates[0, :], gps_estimates[1, :], 'b.', label='GPS')
-
-    plt.plot(state_estimates[0, :], state_estimates[1,
-                                                    :], color='r', label='State Estimate')
-
-    plt.xlim(-4, 14)
-    plt.ylim(-14, 4)
-    plt.xlabel('East (m)')
-    plt.ylabel('North (m)')
-    plt.legend()
-
-    plt.subplot(2, 1, 2)
-    plt.plot(z_bar_t[0], z_bar_t[1], 'r.', label='Estimated Z')
-    plt.plot(z_t[0], z_t[1], 'k.', label='Actual Z')
-
-    plt.xlabel('Right (m)')
-    plt.ylabel('Forward (m)')
-    plt.show()
     return 0
 
 
