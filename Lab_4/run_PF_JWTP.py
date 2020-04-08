@@ -16,6 +16,15 @@ import numpy as np
 import math
 import os.path
 import pdb
+from scipy.stats import norm
+
+NUM_PARTICLES = 1000
+
+# define the randomness in theta & distance for propagating state
+STDDEV_THETA =  0.0872665 # radians, 5 degrees
+STDDEV_DISTANCE = 0.1 # meters
+# stddev for defining particle weight in correction step
+STDDEV_MEAS_ERR = 0.5 # meters
 
 HEIGHT_THRESHOLD = 0.0  # meters
 GROUND_HEIGHT_THRESHOLD = -.4  # meters
@@ -112,7 +121,7 @@ def filter_data(data):
 
     # Remove data that at the same time stamp
     ts = filtered_data["Time Stamp"]
-    filter_idx = [idx for idx in range(1, len(ts)) if ts[idx] != ts[idx-1]]
+    filter_idx = [idx for idx in range(len(ts)) if ts[idx] != ts[idx-1]]
     for key in data.keys():
         filtered_data[key] = [filtered_data[key][i] for i in filter_idx]
 
@@ -165,191 +174,48 @@ def propogate_state(x_t_prev, u_t):
 
     Returns:
     x_bar_t (np.array)   -- the predicted state
-    state vector is [x_t; y_t; theta_t; x_t'; y_t'; theta_t'; theta_t-1] all in the global frame
+    state vector is [x_t; y_t; theta_t] all in the global frame
 
     """
-    """STUDENT CODE START"""
     x_prev = x_t_prev[0]
     y_prev = x_t_prev[1]
     theta_prev = x_t_prev[2]
-    x_dot_prev = x_t_prev[3]
-    y_dot_prev = x_t_prev[4]
-    theta_dot_prev = x_t_prev[5]
-    theta_t_2 = x_t_prev[6]
 
-    x_t = x_dot_prev * DELTA_T + x_prev
-    y_t = y_dot_prev * DELTA_T + y_prev
-    theta_t = theta_dot_prev * DELTA_T + theta_prev
+    # sample random theta & distance
+    samp_theta = theta_prev + np.random.normal(0, STDDEV_THETA)
+    samp_dist = np.random.normal(0, stddev_dist)
+
+    # sample predicted state x_t_i with probability P(x_t_i | x_t-1_i , u_t)
+    x_t = x_prev + samp_dist * np.cos(samp_theta)
+    y_t = y_prev + samp_dist * np.sin(samp_theta)
+    theta_t = samp_theta
     theta_t = wrap_to_pi(theta_t)
 
-    # the global frame acceleration is a function of yaw (theta_t)
-    # and the ass-backwards, fucked up accelerometer measurements
-    a_x_L = u_t[0]  # forward
-    a_y_L = u_t[1]  # left
-    a_x_G = u_t[0] * np.cos(theta_t) - u_t[1] * np.sin(theta_t)
-    a_y_G = u_t[0] * np.sin(theta_t) + u_t[1] * np.cos(theta_t)
-
-    x_dot_t = a_x_G * DELTA_T + x_dot_prev
-    y_dot_t = a_y_G * DELTA_T + y_dot_prev
-    delta_theta = (theta_prev - theta_t_2)
-    delta_theta = min(delta_theta, 2*np.pi - delta_theta)
-    theta_dot_t = delta_theta/DELTA_T
-    # I'm not sure wrapping this is necessary -Tim
-    # theta_dot_t = wrap_to_pi(theta_dot_t)
-
-    x_bar_t = np.array([x_t, y_t, theta_t, x_dot_t,
-                        y_dot_t, theta_dot_t, theta_prev])
-    """STUDENT CODE END"""
+    x_bar_t = np.array([x_t, y_t, theta_t])
 
     return x_bar_t
 
 
-def calc_prop_jacobian_x(x_t_prev, u_t):
-    """Calculate the Jacobian of your motion model with respect to state
-
-    Parameters:
-    x_t_prev (np.array) -- the previous state estimate
-    u_t (np.array)      -- the current control input
-
-    Returns:
-    G_x_t (np.array)    -- Jacobian of motion model wrt to x
-    """
-    """STUDENT CODE START"""
-    theta_prev = x_t_prev[2]
-    c = np.cos(theta_prev)
-    s = np.sin(theta_prev)
-    u0 = u_t[0]
-    u1 = u_t[1]
-
-    G_x_t = np.array([[1, 0, 0, DELTA_T, 0, 0, 0],
-                      [0, 1, 0, 0, DELTA_T, 0, 0],
-                      [0, 0, 1, 0, 0, DELTA_T, 0],
-                      [0, 0, (-u0*s - u1*c)*DELTA_T, 1, 0, 0, 0],
-                      [0, 0, (u0*c - u1*s)*DELTA_T, 0, 1, 0, 0],
-                      [0, 0, 1/DELTA_T, 0, 0, 0, -1/DELTA_T],
-                      [0, 0, 1, 0, 0, 0, 0]
-                      ])
-    """STUDENT CODE END"""
-
-    return G_x_t
 
 
-def calc_prop_jacobian_u(x_t_prev, u_t):
-    """Calculate the Jacobian of motion model with respect to control input
 
-    Parameters:
-    x_t_prev (np.array)     -- the previous state estimate
-    u_t (np.array)          -- the current control input
-
-    Returns:
-    G_u_t (np.array)        -- Jacobian of motion model wrt to u
-    """
-
-    """STUDENT CODE START"""
-    theta_prev = x_t_prev[2]
-    c = np.cos(theta_prev)
-    s = np.sin(theta_prev)
-    G_u_t = np.array([[0, 0],
-                      [0, 0],
-                      [0, 0],
-                      [DELTA_T*c, -DELTA_T*s],
-                      [DELTA_T*s, DELTA_T*c],
-                      [0, 0],
-                      [0, 0]])
-
-    """STUDENT CODE END"""
-
-    return G_u_t
-
-
-def prediction_step(x_t_prev, u_t, sigma_x_t_prev):
+def prediction_step(P_t_prev, u_t):
     """Compute the prediction of EKF
 
     Parameters:
-    x_t_prev (np.array)         -- the previous state estimate
+    P_t_prev (np.array)         -- the previous state matrix, [[x, y, theta, w]^T [x, y, theta, w]^T ...]
     u_t (np.array)              -- the control input
-    sigma_x_t_prev (np.array)   -- the previous variance estimate
 
     Returns:
-    x_bar_t (np.array)          -- the predicted state estimate of time t
-    sigma_x_bar_t (np.array)    -- the predicted variance estimate of time t
+    P_t_predict (np.array)      -- the predicted state matrix after propagating all particles forward in time
     """
 
-    """STUDENT CODE START"""
-    # Covariance matrix of control input
-    sigma_u_t = 0.1 * np.eye(2)  # assume variance of 1 m/s^2
+    # Iterate through every column (particle) of the state matrix and propagate them forward.
 
-    x_bar_t = propogate_state(x_t_prev, u_t)
+    for i in range(NUM_PARTICLES):
+        P_t_predict(:2,i) = propogate_state(P_t_prev(:2,i), u_t) #at this point the weight stays zero
 
-    G_x_t = calc_prop_jacobian_x(x_t_prev, u_t)
-    G_u_t = calc_prop_jacobian_u(x_t_prev, u_t)
-    G_x_t_T = np.transpose(G_x_t)
-    G_u_t_T = np.transpose(G_u_t)
-    sigma_x_bar_t = G_x_t.dot(sigma_x_t_prev).dot(
-        G_x_t_T) + G_u_t.dot(sigma_u_t).dot(G_u_t_T)  # I changed * to .dot() for matrix mult -Tim
-    """STUDENT CODE END"""
-
-    return [x_bar_t, sigma_x_bar_t]
-
-
-def calc_meas_jacobian(x_bar_t):
-    """Calculate the Jacobian of your measurment model with respect to state
-
-    Parameters:
-    x_bar_t (np.array)  -- the predicted state
-
-    Returns:
-    H_t (np.array)      -- Jacobian of measurment model
-    """
-    """STUDENT CODE START"""
-    x_t = x_bar_t[0]
-    y_t = x_bar_t[1]
-    theta_t = x_bar_t[2]  # must access the first element for some reason
-    delta_x = X_LANDMARK - x_t
-    delta_y = Y_LANDMARK - y_t
-
-    c = np.cos(theta_t)
-    s = np.sin(theta_t)
-    H_t = np.array([[-1*s, c, c*delta_x + s*delta_y, 0, 0, 0, 0],
-                    [-1*c, -1*s, -1*s*delta_x + c*delta_y, 0, 0, 0, 0],
-                    [0, 0, 1, 0, 0, 0, 0]])
-
-    # H_t = np.array([[-1*np.cos(theta_t), np.sin(theta_t), -1*delta_x*np.sin(theta_t) - delta_y*np.cos(theta_t), 0, 0, 0, 0],
-    #                [-1*np.sin(theta_t), -1*np.cos(theta_t), delta_x *
-    #                 np.cos(theta_t) - delta_y*np.sin(theta_t), 0, 0, 0, 0],
-    #                [0, 0, 1, 0, 0, 0, 0]
-    #                ])
-    """STUDENT CODE END"""
-
-    return H_t
-
-
-def calc_kalman_gain(sigma_x_bar_t, H_t):
-    """Calculate the Kalman Gain
-
-    Parameters:
-    sigma_x_bar_t (np.array)  -- the predicted state covariance matrix
-    H_t (np.array)            -- the measurement Jacobian
-
-    Returns:
-    K_t (np.array)            -- Kalman Gain
-    """
-    """STUDENT CODE START"""
-    # Covariance matrix of measurments
-    # ??? sigma_z_t = np.empty((, ))  # 3x3
-    sigma_xy = 0.5
-    sigma_theta = 0.0000000001
-    sigma_z_t = np.array([[sigma_xy, 0, 0],
-                          [0, sigma_xy, 0],
-                          [0, 0, sigma_theta]])
-
-    H_t_T = np.transpose(H_t)
-    K_t = sigma_x_bar_t.dot(H_t_T).dot(
-        np.linalg.inv(H_t.dot(sigma_x_bar_t).dot(H_t_T) + sigma_z_t))
-    """STUDENT CODE END"""
-
-    return K_t
-
+    return P_t_predict
 
 def calc_meas_prediction(x_bar_t):
     """Calculate predicted measurement based on the predicted state
@@ -383,29 +249,38 @@ def calc_meas_prediction(x_bar_t):
     return z_bar_t
 
 
-def correction_step(x_bar_t, z_t, sigma_x_bar_t):
+def correction_step(P_t_predict, z_t):
     """Compute the correction of EKF
 
     Parameters:
-    x_bar_t       (np.array)    -- the predicted state estimate of time t
-    z_t           (np.array)    -- the measured state of time t
-    sigma_x_bar_t (np.array)    -- the predicted variance of time t
+    P_t_predict         (np.array)    -- the predicted state matrix time t
+    z_t                 (np.array)    -- the measured state of time t
 
     Returns:
-    x_est_t       (np.array)    -- the filtered state estimate of time t
-    sigma_x_est_t (np.array)    -- the filtered variance estimate of time t
+    P_t                 (np.array)    -- the final state matrix estimate of time t
     """
+    normal_object = scipy.stats.norm(0, STDDEV_MEAS_ERR)
 
-    """STUDENT CODE START"""
-    H_t = calc_meas_jacobian(x_bar_t)
-    K_t = calc_kalman_gain(sigma_x_bar_t, H_t)
-    z_bar_t = calc_meas_prediction(x_bar_t)
-    x_est_t = x_bar_t + K_t.dot(z_t - z_bar_t)
-    sigma_x_est_t = (np.eye(7) - K_t.dot(H_t)).dot(sigma_x_bar_t)
+    # Calculate weight for each particle j
+    for j in range(NUM_PARTICLES):
+        # calculate what the particle thinks the measurement should be 
+        z_bar_t = calc_meas_prediction(x_bar_t) # TODO: CHANGE THIS FUNCTION
 
-    """STUDENT CODE END"""
+        # find the geometric distance between z_t and z_pred (Pythagorean theorem)
+        distance = np.linalg.norm(z_t - z_bar_t)
 
-    return [x_est_t, sigma_x_est_t, z_bar_t]
+        # weight is zero-mean normal PDF evaluated at d (what variance?)
+        weight = normal_object.pdf(distance)
+
+        P_t_predict(3,j) = weight
+
+    # Sample from the set of particles proportional to their weights
+    # draw another card from the deck of particle-cards with probability w
+    P_t = np.random.choice(P_t_prev(:2,:).to_list(), size=(3,NUM_PARTICLES), replace=True, p=P_t_prev(3,:))     
+    # TODO: FINISH THIS!
+    # np.random.choice(range(NUM_PARTICLES), size=(NUM_PARTICLES), replace=True, p=P_t_prev[3,:])
+
+    return P_t
 
 
 def main():
