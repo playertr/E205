@@ -17,14 +17,17 @@ import math
 import os.path
 import pdb
 from scipy.stats import norm
+import scipy
 
 NUM_PARTICLES = 1000
 
 # define the randomness in theta & distance for propagating state
-STDDEV_THETA =  0.0872665 # radians, 5 degrees
+# STDDEV_THETA =  0.0872665 # radians, 5 degrees
+STDDEV_THETA =  0.261799 # radians, 15 degrees
 STDDEV_DISTANCE = 0.1 # meters
 # stddev for defining particle weight in correction step
 STDDEV_MEAS_ERR = 0.5 # meters
+STDDEV_INIT = 0 # in any dimension, the initial particle array with be randomized with this.
 
 HEIGHT_THRESHOLD = 0.0  # meters
 GROUND_HEIGHT_THRESHOLD = -.4  # meters
@@ -165,8 +168,8 @@ def wrap_to_pi(angle):
     return angle
 
 
-def propogate_state(x_t_prev, u_t):
-    """Propogate/predict the state based on chosen motion model
+def propagate_state(x_t_prev, u_t):
+    """propagate/predict the state based on chosen motion model
 
     Parameters:
     x_t_prev (np.array)  -- the previous state estimate
@@ -176,28 +179,28 @@ def propogate_state(x_t_prev, u_t):
     x_bar_t (np.array)   -- the predicted state
     state vector is [x_t; y_t; theta_t] all in the global frame
 
+    u_t  (float)         -- the yaw value, our control input 
+
     """
     x_prev = x_t_prev[0]
     y_prev = x_t_prev[1]
     theta_prev = x_t_prev[2]
 
-    # sample random theta & distance
+    # sample random theta_prev & distance
     samp_theta = theta_prev + np.random.normal(0, STDDEV_THETA)
-    samp_dist = np.random.normal(0, stddev_dist)
+    samp_dist = np.random.normal(0, STDDEV_DISTANCE)
 
     # sample predicted state x_t_i with probability P(x_t_i | x_t-1_i , u_t)
     x_t = x_prev + samp_dist * np.cos(samp_theta)
     y_t = y_prev + samp_dist * np.sin(samp_theta)
-    theta_t = samp_theta
+    
+    # reset theta to be the measured yaw value
+    theta_t = u_t 
     theta_t = wrap_to_pi(theta_t)
 
     x_bar_t = np.array([x_t, y_t, theta_t])
 
     return x_bar_t
-
-
-
-
 
 def prediction_step(P_t_prev, u_t):
     """Compute the prediction of EKF
@@ -211,9 +214,10 @@ def prediction_step(P_t_prev, u_t):
     """
 
     # Iterate through every column (particle) of the state matrix and propagate them forward.
+    P_t_predict = np.zeros(shape=P_t_prev.shape)
 
     for i in range(NUM_PARTICLES):
-        P_t_predict(:2,i) = propogate_state(P_t_prev(:2,i), u_t) #at this point the weight stays zero
+        P_t_predict[:3,i] = propagate_state(P_t_prev[:3,i], u_t) #at this point the weight stays zero
 
     return P_t_predict
 
@@ -225,10 +229,9 @@ def calc_meas_prediction(x_bar_t):
 
     Returns:
     z_bar_t (np.array)  -- the predicted measurement
-    z_bar_t defined as [z_xLL, z_yLL, z_theta]
+    z_bar_t defined as [z_xLL, z_yLL]
     """
 
-    """STUDENT CODE START"""
     x_t = x_bar_t[0]
     y_t = x_bar_t[1]
     theta_t = x_bar_t[2]
@@ -239,15 +242,27 @@ def calc_meas_prediction(x_bar_t):
     z_xLL = np.sin(theta_t) * delta_x - np.cos(theta_t) * delta_y
     z_yLL = np.cos(theta_t) * delta_x + np.sin(theta_t) * delta_y
 
-    # z_xLL = np.cos(theta_t) * delta_x - np.sin(theta_t) * delta_y
-    # z_yLL = np.sin(theta_t) * delta_x + np.cos(theta_t) * delta_y
-    z_theta = theta_t
-
-    z_bar_t = np.array([z_xLL, z_yLL, z_theta])
-    """STUDENT CODE END"""
+    z_bar_t = np.array([z_xLL, z_yLL])
 
     return z_bar_t
 
+def calc_mean_state(P_t):
+    """Compute the mean state at time t using the set of particles
+
+    Parameters:
+    P_t                  (np.array)    -- the particle state matrix at time t
+
+    Returns:
+    state_est_t          (np.array)    -- the averaged state estimate at time t
+    """
+    # if we expect our particles to diverge into multiple clumps, we could implement a clustering algorithm here!
+    # weighted average of multiple numbers: a*x1 + b*x2 + c*x3 / 3
+    x_mean = np.average(P_t[0,:], weights=P_t[3,:])
+    y_mean = np.average(P_t[1,:], weights=P_t[3,:])
+    theta_mean = np.average(P_t[2,:], weights=P_t[3,:])
+    state_est_t = np.array([x_mean, y_mean, theta_mean])
+
+    return state_est_t
 
 def correction_step(P_t_predict, z_t):
     """Compute the correction of EKF
@@ -264,7 +279,7 @@ def correction_step(P_t_predict, z_t):
     # Calculate weight for each particle j
     for j in range(NUM_PARTICLES):
         # calculate what the particle thinks the measurement should be 
-        z_bar_t = calc_meas_prediction(x_bar_t) # TODO: CHANGE THIS FUNCTION
+        z_bar_t = calc_meas_prediction(P_t_predict[:3,j])
 
         # find the geometric distance between z_t and z_pred (Pythagorean theorem)
         distance = np.linalg.norm(z_t - z_bar_t)
@@ -272,15 +287,20 @@ def correction_step(P_t_predict, z_t):
         # weight is zero-mean normal PDF evaluated at d (what variance?)
         weight = normal_object.pdf(distance)
 
-        P_t_predict(3,j) = weight
+        P_t_predict[3,j] = weight
 
     # Sample from the set of particles proportional to their weights
     # draw another card from the deck of particle-cards with probability w
-    P_t = np.random.choice(P_t_prev(:2,:).to_list(), size=(3,NUM_PARTICLES), replace=True, p=P_t_prev(3,:))     
-    # TODO: FINISH THIS!
-    # np.random.choice(range(NUM_PARTICLES), size=(NUM_PARTICLES), replace=True, p=P_t_prev[3,:])
 
-    return P_t
+    weights = P_t_predict[-1,:] / sum(P_t_predict[-1,:])
+    indices = np.random.choice(range(NUM_PARTICLES), size=(NUM_PARTICLES), replace=True, p=weights)
+
+    P_t = np.zeros(shape=P_t_predict.shape)
+    for m in range(len(indices)):
+        P_t[:,m] = P_t_predict[:,indices[m]]
+    
+    state_est_t = calc_mean_state(P_t)
+    return P_t, state_est_t
 
 
 def main():
@@ -303,7 +323,7 @@ def main():
     time_stamps = data["Time Stamp"]
     lat_gps = data["Latitude"]
     lon_gps = data["Longitude"]
-    # Tim changed yaw to radians
+    # Tim changed yaw to radians # Tim is a superstar!
     yaw_lidar = [wrap_to_pi(x * -np.pi / 180) for x in data["Yaw"]]
     pitch_lidar = data["Pitch"]
     roll_lidar = data["Roll"]
@@ -314,49 +334,38 @@ def main():
     lon_origin = lon_gps[0]
 
     #  Initialize filter
-    """STUDENT CODE START"""
-    N = 7  # number of states
-    # assume it starts at the origin
-    state_est_t_prev = np.array([0, 0, yaw_lidar[0], 0, 0, 0, yaw_lidar[0]])
-    var_est_t_prev = np.identity(N)
+    N = 3  # number of states
+
+    # Randomly generate initial particles from a normal distribution centered around (at 0,0,0)
+    # Use small STDDEV_INIT for known start position 
+    # Use large STDDEV_INIT for random start position
+    P_t_prev = np.random.normal(0,STDDEV_INIT, size=(N+1,NUM_PARTICLES))
+    P_t_prev[-1, :] = 1.0 / NUM_PARTICLES # assign equal weights to all paqurticles
+    # P_t_prev[-1, :] = P[-1,:] / sum(P[-1,:]) 
+
 
     state_estimates = np.empty((N, len(time_stamps)))
-    covariance_estimates = np.empty((N, N, len(time_stamps)))
     gps_estimates = np.empty((2, len(time_stamps)))
-    """STUDENT CODE END"""
+
     #  Run filter over data
     for t, _ in enumerate(time_stamps):
         # Get control input
-        """STUDENT CODE START"""
-
-        u_t = np.array([x_ddot[t], y_ddot[t]]  # since x_ddot is
-                       )  # u_t = [a_x_t, a_y_t] is a 2x815 array.
-        # a_x_t - acceleration in x
-        # a_y_t - acceleration in y
-        """STUDENT CODE END"""
+        u_t = yaw_lidar[t]
 
         # Prediction Step
-        state_pred_t, var_pred_t = prediction_step(
-            state_est_t_prev, u_t, var_est_t_prev)
+        P_t_predict = prediction_step(P_t_prev, u_t)
 
         # Get measurement
-        """STUDENT CODE START"""
-        z_t = np.array([x_lidar[t], y_lidar[t], yaw_lidar[t]])
-        """STUDENT CODE END"""
+        z_t = np.array([x_lidar[t], y_lidar[t]])
 
         # Correction Step
-        state_est_t, var_est_t, z_bar_t = correction_step(state_pred_t,
-                                                          z_t,
-                                                          var_pred_t)
+        P_t, state_est_t = correction_step(P_t_predict, z_t)
 
         #  For clarity sake/teaching purposes, we explicitly update t->(t-1)
-        state_est_t_prev = state_est_t
-        var_est_t_prev = var_est_t
+        P_t_prev = P_t
 
         # Log Data
-
         state_estimates[:, t] = state_est_t
-        covariance_estimates[:, :, t] = var_est_t
 
         x_gps, y_gps = convert_gps_to_xy(lat_gps=lat_gps[t],
                                          lon_gps=lon_gps[t],
@@ -364,19 +373,19 @@ def main():
                                          lon_origin=lon_origin)
         gps_estimates[:, t] = np.array([x_gps, y_gps])
 
-        """STUDENT CODE START"""
-        # Plot or print results here
-        if np.mod(t, 5) == 0:
-            plt.subplot(2, 1, 1)
-            plt.plot(gps_estimates[0, t],
-                     gps_estimates[1, t], 'b.', label='GPS')
+        # Plot Results
+        # Plot Estimated Path & Expected Path & GPS
+        # Path tracking error 
+        if np.mod(t, 30) == 0:
+            if t==0:
+                plt.plot(gps_estimates[0],
+                        gps_estimates[1], 'b.', label='GPS (Expected Path)')
 
             plt.quiver(state_estimates[0, t], state_estimates[1, t], np.cos(
-                state_estimates[2, t]), np.sin(state_estimates[2, t]), color='r')
+                state_estimates[2, t]), np.sin(state_estimates[2, t]), color='r',label='Estimated State')
 
-            plt.quiver(state_estimates[0, t], state_estimates[1, t], np.cos(
-                z_t[2]), np.sin(z_t[2]), color='g')
-
+            skip_num = 40
+            plt.scatter(P_t[0,::skip_num], P_t[1,::skip_num], color='g', label='Particles', s=2, zorder=0)
             plt.xlim(-4, 14)
             plt.ylim(-14, 4)
             plt.xlabel('East (m)')
@@ -384,41 +393,8 @@ def main():
             if t == 0:
                 plt.legend()
 
-            plt.subplot(2, 1, 2)
-            plt.plot(z_bar_t[0], z_bar_t[1], 'r.', label='Estimated Z')
-            plt.plot(z_t[0], z_t[1], 'k.', label='Actual Z')
-
-            plt.xlabel('Right (m)')
-            plt.ylabel('Forward (m)')
-            if t == 0:
-                plt.legend()
-
             print(t)
-            plt.pause(0.01)
-
-            # if t == 450:
-            #    pdb.set_trace()
-            # At t=450, the compass is facing left (West) but it doesn't seem to think it's to the south of the landmark.
-        """STUDENT CODE END"""
-
-    plt.subplot(2, 1, 1)
-    plt.plot(gps_estimates[0, :], gps_estimates[1, :], 'b.', label='GPS')
-
-    plt.plot(state_estimates[0, :], state_estimates[1,
-                                                    :], color='r', label='State Estimate')
-
-    plt.xlim(-4, 14)
-    plt.ylim(-14, 4)
-    plt.xlabel('East (m)')
-    plt.ylabel('North (m)')
-    plt.legend()
-
-    plt.subplot(2, 1, 2)
-    plt.plot(z_bar_t[0], z_bar_t[1], 'r.', label='Estimated Z')
-    plt.plot(z_t[0], z_t[1], 'k.', label='Actual Z')
-
-    plt.xlabel('Right (m)')
-    plt.ylabel('Forward (m)')
+            plt.pause(0.0001)
     plt.show()
     return 0
 
