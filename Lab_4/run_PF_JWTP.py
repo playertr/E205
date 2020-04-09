@@ -346,6 +346,8 @@ def main():
 
     state_estimates = np.empty((N, len(time_stamps)))
     gps_estimates = np.empty((2, len(time_stamps)))
+    errorsq = np.empty(len(time_stamps))
+    RMSE = np.empty(len(time_stamps))
 
     #  Run filter over data
     for t, _ in enumerate(time_stamps):
@@ -373,13 +375,29 @@ def main():
                                          lon_origin=lon_origin)
         gps_estimates[:, t] = np.array([x_gps, y_gps])
 
+        # RMSE
+            # expected_path_x = 0 to 10 to 10 back to 0 to 0
+            # expected_path_y = 0 to  0 to -10 to -10 back to 0
+            # written for Lab 3
+        if (0 < t < 201):
+            errorsq[t] = (0 - state_est_t[1])**2
+        elif (201 < t < 401):
+            errorsq[t] = (10 - state_est_t[0])**2
+            #print(state_est_t[1])
+        elif (401 < t < 605):
+            errorsq[t] = (-10 - state_est_t[1])**2
+        else: # 600 < t < 810
+            errorsq[t] = (0 - state_est_t[0])**2
+        RMSE[t] = np.sqrt(np.sum(errorsq[0:t]/t))
+
         # Plot Results
         # Plot Estimated Path & Expected Path & GPS
         # Path tracking error 
+        plt.figure(1)
         plt.plot(gps_estimates[0],
                         gps_estimates[1], 'b.', label='GPS (Expected Path)')
         if np.mod(t, 30) == 0:
-
+            plt.figure(1)
             plt.quiver(state_estimates[0, t], state_estimates[1, t], np.cos(
                 state_estimates[2, t]), np.sin(state_estimates[2, t]), color='r',label='Estimated State')
 
@@ -389,6 +407,14 @@ def main():
             plt.ylim(-14, 4)
             plt.xlabel('East (m)')
             plt.ylabel('North (m)')
+            if t == 0:
+                plt.legend()
+
+            plt.figure(2)
+            plt.plot(t, RMSE[t], 'k.')
+
+            plt.xlabel('Timestep (0.1 s)')
+            plt.ylabel('RMS Error (m)')
             if t == 0:
                 plt.legend()
 
