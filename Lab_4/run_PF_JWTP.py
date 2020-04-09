@@ -376,10 +376,9 @@ def main():
         # Plot Results
         # Plot Estimated Path & Expected Path & GPS
         # Path tracking error 
-        if np.mod(t, 30) == 0:
-            if t==0:
-                plt.plot(gps_estimates[0],
+        plt.plot(gps_estimates[0],
                         gps_estimates[1], 'b.', label='GPS (Expected Path)')
+        if np.mod(t, 30) == 0:
 
             plt.quiver(state_estimates[0, t], state_estimates[1, t], np.cos(
                 state_estimates[2, t]), np.sin(state_estimates[2, t]), color='r',label='Estimated State')
