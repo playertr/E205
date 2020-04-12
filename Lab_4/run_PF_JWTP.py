@@ -379,12 +379,12 @@ def main():
             # expected_path_x = 0 to 10 to 10 back to 0 to 0
             # expected_path_y = 0 to  0 to -10 to -10 back to 0
             # written for Lab 3
-        if (0 < t < 201):
+        if (0 < t < 220):
             errorsq[t] = (0 - state_est_t[1])**2
-        elif (201 < t < 401):
+        elif (220 < t < (420 + 6.9)): #b4l2a0z6e9it
             errorsq[t] = (10 - state_est_t[0])**2
             #print(state_est_t[1])
-        elif (401 < t < 605):
+        elif (421 < t < 605):
             errorsq[t] = (-10 - state_est_t[1])**2
         else: # 600 < t < 810
             errorsq[t] = (0 - state_est_t[0])**2
@@ -395,31 +395,37 @@ def main():
         # Path tracking error 
         plt.figure(1)
         plt.plot(gps_estimates[0],
-                        gps_estimates[1], 'b.', label='GPS (Expected Path)')
+                        gps_estimates[1], 'b.', label='GPS (Expected Path)',zorder=40)
         if np.mod(t, 30) == 0:
             plt.figure(1)
             plt.quiver(state_estimates[0, t], state_estimates[1, t], np.cos(
-                state_estimates[2, t]), np.sin(state_estimates[2, t]), color='r',label='Estimated State')
+                state_estimates[2, t]), np.sin(state_estimates[2, t]), color='r',label='Estimated State', zorder=50)
 
             skip_num = 40
-            plt.scatter(P_t[0,::skip_num], P_t[1,::skip_num], color='g', label='Particles', s=2, zorder=0)
+            plt.scatter(P_t[0,::skip_num], P_t[1,::skip_num], color='g', label='Particles', s=2, zorder=10)
             plt.xlim(-4, 14)
             plt.ylim(-14, 4)
             plt.xlabel('East (m)')
             plt.ylabel('North (m)')
             if t == 0:
+                expected_path_x = [0, 10, 10, 0, 0]
+                expected_path_y = [0, 0, -10, -10, 0]
+                plt.plot(expected_path_x,expected_path_y, 'k', label='Perfect Path', zorder=0, linewidth=2)
+                plt.plot(X_LANDMARK,Y_LANDMARK, 'mo', label='Landmark Location')
                 plt.legend()
+            plt.pause(0.0001)
 
             plt.figure(2)
-            plt.plot(t, RMSE[t], 'k.')
+            plt.plot(t, errorsq[t], 'k.')
 
             plt.xlabel('Timestep (0.1 s)')
-            plt.ylabel('RMS Error (m)')
+            plt.ylabel('Squared Error (m^2)')
             if t == 0:
                 plt.legend()
 
             print(t)
             plt.pause(0.0001)
+    print(RMSE[-1])
     plt.show()
     return 0
 
